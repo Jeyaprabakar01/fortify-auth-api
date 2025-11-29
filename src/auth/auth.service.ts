@@ -1,7 +1,7 @@
 import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
+	BadRequestException,
+	Injectable,
+	NotFoundException,
 } from '@nestjs/common';
 import { RegisterUserDto } from './dto/register-user.dto';
 import * as argon2 from 'argon2';
@@ -12,147 +12,147 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prismaService: PrismaService) {}
+	constructor(private readonly prismaService: PrismaService) {}
 
-  async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
-    const existingUser = await this.prismaService.user.findUnique({
-      where: { email: registerUserDto.email },
-    });
+	async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
+		const existingUser = await this.prismaService.user.findUnique({
+			where: { email: registerUserDto.email },
+		});
 
-    if (existingUser) {
-      throw new BadRequestException('User with this email already exists');
-    }
+		if (existingUser) {
+			throw new BadRequestException('User with this email already exists');
+		}
 
-    const hashedPassword = await this.hashData(registerUserDto.password);
+		const hashedPassword = await this.hashData(registerUserDto.password);
 
-    const user = await this.prismaService.user.create({
-      data: {
-        fullName: registerUserDto.fullName,
-        email: registerUserDto.email,
-        password: hashedPassword,
-      },
-    });
+		const user = await this.prismaService.user.create({
+			data: {
+				fullName: registerUserDto.fullName,
+				email: registerUserDto.email,
+				password: hashedPassword,
+			},
+		});
 
-    await this.createOTP(user.id, OTPType.VERIFICATION);
+		await this.createOTP(user.id, OTPType.VERIFICATION);
 
-    return 'User registered successfully';
-  }
+		return 'User registered successfully';
+	}
 
-  private hashData(password: string): Promise<string> {
-    return argon2.hash(password);
-  }
+	private hashData(password: string): Promise<string> {
+		return argon2.hash(password);
+	}
 
-  private verifyHash(data: string, hashedData: string): Promise<boolean> {
-    return argon2.verify(hashedData, data);
-  }
+	private verifyHash(data: string, hashedData: string): Promise<boolean> {
+		return argon2.verify(hashedData, data);
+	}
 
-  private generateOTP(): Promise<string> {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+	private generateOTP(): Promise<string> {
+		const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    return this.hashData(otp);
-  }
+		return this.hashData(otp);
+	}
 
-  private async createOTP(userId: string, type: OTPType): Promise<OTP> {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 5 * 60000);
+	private async createOTP(userId: string, type: OTPType): Promise<OTP> {
+		const now = new Date();
+		const expiresAt = new Date(now.getTime() + 5 * 60000);
 
-    await this.prismaService.oTP.updateMany({
-      where: {
-        userId,
-        isUsed: false,
-        expiresAt: { gt: now },
-      },
-      data: { isUsed: true },
-    });
+		await this.prismaService.oTP.updateMany({
+			where: {
+				userId,
+				isUsed: false,
+				expiresAt: { gt: now },
+			},
+			data: { isUsed: true },
+		});
 
-    let otpCode: string;
+		let otpCode: string;
 
-    while (true) {
-      const tempOTP = await this.generateOTP();
+		while (true) {
+			const tempOTP = await this.generateOTP();
 
-      const existingOTP = await this.prismaService.oTP.findFirst({
-        where: {
-          otpCode: tempOTP,
-          expiresAt: { gt: now },
-        },
-      });
+			const existingOTP = await this.prismaService.oTP.findFirst({
+				where: {
+					otpCode: tempOTP,
+					expiresAt: { gt: now },
+				},
+			});
 
-      if (!existingOTP) {
-        otpCode = tempOTP;
+			if (!existingOTP) {
+				otpCode = tempOTP;
 
-        break;
-      }
-    }
+				break;
+			}
+		}
 
-    const otp = await this.prismaService.oTP.create({
-      data: {
-        userId,
-        otpCode,
-        type,
-        expiresAt,
-      },
-    });
+		const otp = await this.prismaService.oTP.create({
+			data: {
+				userId,
+				otpCode,
+				type,
+				expiresAt,
+			},
+		});
 
-    return otp;
-  }
+		return otp;
+	}
 
-  async verifyEmail(verifyEmailDto: VerifyEmailDto): Promise<string> {
-    const user = await this.prismaService.user.findUnique({
-      where: { email: verifyEmailDto.email },
-    });
+	async verifyEmail(verifyEmailDto: VerifyEmailDto): Promise<string> {
+		const user = await this.prismaService.user.findUnique({
+			where: { email: verifyEmailDto.email },
+		});
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+		if (!user) {
+			throw new NotFoundException('User not found');
+		}
 
-    if (user.isVerified) {
-      throw new BadRequestException('Email already verified');
-    }
+		if (user.isVerified) {
+			throw new BadRequestException('Email already verified');
+		}
 
-    const now = new Date();
+		const now = new Date();
 
-    const otps = await this.prismaService.oTP.findMany({
-      where: {
-        userId: user.id,
-        type: OTPType.VERIFICATION,
-        isUsed: false,
-        expiresAt: { gt: now },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+		const otps = await this.prismaService.oTP.findMany({
+			where: {
+				userId: user.id,
+				type: OTPType.VERIFICATION,
+				isUsed: false,
+				expiresAt: { gt: now },
+			},
+			orderBy: { createdAt: 'desc' },
+		});
 
-    if (!otps || otps.length === 0) {
-      throw new BadRequestException('OTP expired or invalid');
-    }
+		if (!otps || otps.length === 0) {
+			throw new BadRequestException('OTP expired or invalid');
+		}
 
-    let validOtp: OTP | null = null;
+		let validOtp: OTP | null = null;
 
-    for (const otp of otps) {
-      const isValid = await this.verifyHash(
-        verifyEmailDto.otpCode,
-        otp.otpCode,
-      );
-      if (isValid) {
-        validOtp = otp;
-        break;
-      }
-    }
+		for (const otp of otps) {
+			const isValid = await this.verifyHash(
+				verifyEmailDto.otpCode,
+				otp.otpCode,
+			);
+			if (isValid) {
+				validOtp = otp;
+				break;
+			}
+		}
 
-    if (!validOtp) {
-      throw new BadRequestException('Invalid OTP');
-    }
+		if (!validOtp) {
+			throw new BadRequestException('Invalid OTP');
+		}
 
-    await this.prismaService.$transaction([
-      this.prismaService.oTP.update({
-        where: { id: validOtp.id },
-        data: { isUsed: true },
-      }),
-      this.prismaService.user.update({
-        where: { id: user.id },
-        data: { isVerified: true },
-      }),
-    ]);
+		await this.prismaService.$transaction([
+			this.prismaService.oTP.update({
+				where: { id: validOtp.id },
+				data: { isUsed: true },
+			}),
+			this.prismaService.user.update({
+				where: { id: user.id },
+				data: { isVerified: true },
+			}),
+		]);
 
-    return 'Email verified successfully';
-  }
+		return 'Email verified successfully';
+	}
 }
