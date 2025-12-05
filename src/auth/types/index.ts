@@ -1,4 +1,4 @@
-import { Role } from 'generated/prisma/enums';
+import { Role } from 'src/generated/prisma/enums';
 
 export type TokenPayload = {
 	id: string;

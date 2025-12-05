@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { OTPType } from 'generated/prisma/enums';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as argon2 from 'argon2';
-import { OTP } from 'generated/prisma/client';
+import { OTPType } from 'src/generated/prisma/enums';
+import { OTP } from 'src/generated/prisma/client';
 
 @Injectable()
 export class OtpService {

@@ -7,7 +7,6 @@ import {
 import { RegisterUserDto } from './dto/register-user.dto';
 import * as argon2 from 'argon2';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { OTPType } from 'generated/prisma/enums';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
@@ -16,6 +15,7 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { TokenPayload } from 'src/auth/types';
 import { DeviceDetails } from 'src/auth/decorators/device-details.decorator';
 import { Response } from 'express';
+import { OTPType } from 'src/generated/prisma/enums';
 
 @Injectable()
 export class AuthService {
