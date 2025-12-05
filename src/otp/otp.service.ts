@@ -8,28 +8,28 @@ import { OTP } from 'generated/prisma/client';
 export class OtpService {
 	constructor(private readonly prismaService: PrismaService) {}
 
-	async createOTP(userId: string, type: OTPType): Promise<string> {
+	async createOtp(userId: string, type: OTPType): Promise<string> {
 		const now = new Date();
 		const expiresAt = new Date(now.getTime() + 5 * 60000);
 
-		await this.invalidatePreviousOTPs(userId, type);
+		await this.invalidatePreviousOtps(userId, type);
 
-		const plainOTP = await this.generateUniqueOTP(userId);
-		const hashedOTP = await this.hashData(plainOTP);
+		const plainOtp = await this.generateUniqueOtp(userId);
+		const hashedOtp = await this.hashData(plainOtp);
 
 		await this.prismaService.oTP.create({
 			data: {
 				userId,
-				otpCode: hashedOTP,
+				otpCode: hashedOtp,
 				type,
 				expiresAt,
 			},
 		});
 
-		return plainOTP;
+		return plainOtp;
 	}
 
-	async findValidOTP(
+	async findValidOtp(
 		userId: string,
 		type: OTPType,
 		otpCode: string,
@@ -63,7 +63,7 @@ export class OtpService {
 		return validOtp;
 	}
 
-	private async invalidatePreviousOTPs(
+	private async invalidatePreviousOtps(
 		userId: string,
 		type: OTPType,
 	): Promise<void> {
@@ -80,14 +80,16 @@ export class OtpService {
 		});
 	}
 
-	private async generateUniqueOTP(userId: string): Promise<string> {
+	private async generateUniqueOtp(userId: string): Promise<string> {
 		const now = new Date();
-		const MAX_ATTEMPTS = 10;
+		const MAX_ATTEMPTS = 5;
+
+		let plainOtp = null;
 
 		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-			const plainOTP = this.generateRandomOTP();
+			const tempOtp = this.generateRandomOtp();
 
-			const userOTPs = await this.prismaService.oTP.findMany({
+			const userOtps = await this.prismaService.oTP.findMany({
 				where: {
 					userId,
 					expiresAt: { gt: now },
@@ -95,22 +97,22 @@ export class OtpService {
 			});
 
 			let isDuplicate = false;
-			for (const otp of userOTPs) {
-				if (await this.verifyHash(otp.otpCode, plainOTP)) {
+			for (const otp of userOtps) {
+				if (await this.verifyHash(otp.otpCode, tempOtp)) {
 					isDuplicate = true;
 					break;
 				}
 			}
 
 			if (!isDuplicate) {
-				return plainOTP;
+				plainOtp = tempOtp;
 			}
 		}
 
-		return this.generateRandomOTP();
+		return plainOtp;
 	}
 
-	private generateRandomOTP(): string {
+	private generateRandomOtp(): string {
 		return Math.floor(100000 + Math.random() * 900000).toString();
 	}
 

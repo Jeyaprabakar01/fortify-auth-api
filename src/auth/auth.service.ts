@@ -42,7 +42,7 @@ export class AuthService {
 			},
 		});
 
-		const otp = await this.otpService.createOTP(user.id, OTPType.VERIFICATION);
+		const otp = await this.otpService.createOtp(user.id, OTPType.VERIFICATION);
 
 		return otp;
 	}
@@ -60,7 +60,7 @@ export class AuthService {
 			throw new BadRequestException('Email already verified');
 		}
 
-		const validOtp = await this.otpService.findValidOTP(
+		const validOtp = await this.otpService.findValidOtp(
 			user.id,
 			OTPType.VERIFICATION,
 			verifyEmailDto.otpCode,
