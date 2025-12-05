@@ -7,12 +7,15 @@ import { RegisterUserDto } from './dto/register-user.dto';
 import * as argon2 from 'argon2';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { OTPType } from 'generated/prisma/enums';
-import { OTP } from 'generated/prisma/client';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { OtpService } from 'src/otp/otp.service';
 
 @Injectable()
 export class AuthService {
-	constructor(private readonly prismaService: PrismaService) {}
+	constructor(
+		private readonly prismaService: PrismaService,
+		private readonly otpService: OtpService,
+	) {}
 
 	async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
 		const existingUser = await this.prismaService.user.findUnique({
@@ -33,65 +36,7 @@ export class AuthService {
 			},
 		});
 
-		await this.createOTP(user.id, OTPType.VERIFICATION);
-
-		return 'User registered successfully';
-	}
-
-	private hashData(password: string): Promise<string> {
-		return argon2.hash(password);
-	}
-
-	private verifyHash(data: string, hashedData: string): Promise<boolean> {
-		return argon2.verify(hashedData, data);
-	}
-
-	private generateOTP(): Promise<string> {
-		const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-		return this.hashData(otp);
-	}
-
-	private async createOTP(userId: string, type: OTPType): Promise<OTP> {
-		const now = new Date();
-		const expiresAt = new Date(now.getTime() + 5 * 60000);
-
-		await this.prismaService.oTP.updateMany({
-			where: {
-				userId,
-				isUsed: false,
-				expiresAt: { gt: now },
-			},
-			data: { isUsed: true },
-		});
-
-		let otpCode: string;
-
-		while (true) {
-			const tempOTP = await this.generateOTP();
-
-			const existingOTP = await this.prismaService.oTP.findFirst({
-				where: {
-					otpCode: tempOTP,
-					expiresAt: { gt: now },
-				},
-			});
-
-			if (!existingOTP) {
-				otpCode = tempOTP;
-
-				break;
-			}
-		}
-
-		const otp = await this.prismaService.oTP.create({
-			data: {
-				userId,
-				otpCode,
-				type,
-				expiresAt,
-			},
-		});
+		const otp = await this.otpService.createOTP(user.id, OTPType.VERIFICATION);
 
 		return otp;
 	}
@@ -109,38 +54,11 @@ export class AuthService {
 			throw new BadRequestException('Email already verified');
 		}
 
-		const now = new Date();
-
-		const otps = await this.prismaService.oTP.findMany({
-			where: {
-				userId: user.id,
-				type: OTPType.VERIFICATION,
-				isUsed: false,
-				expiresAt: { gt: now },
-			},
-			orderBy: { createdAt: 'desc' },
-		});
-
-		if (!otps || otps.length === 0) {
-			throw new BadRequestException('OTP expired or invalid');
-		}
-
-		let validOtp: OTP | null = null;
-
-		for (const otp of otps) {
-			const isValid = await this.verifyHash(
-				verifyEmailDto.otpCode,
-				otp.otpCode,
-			);
-			if (isValid) {
-				validOtp = otp;
-				break;
-			}
-		}
-
-		if (!validOtp) {
-			throw new BadRequestException('Invalid OTP');
-		}
+		const validOtp = await this.otpService.findValidOTP(
+			user.id,
+			OTPType.VERIFICATION,
+			verifyEmailDto.otpCode,
+		);
 
 		await this.prismaService.$transaction([
 			this.prismaService.oTP.update({
@@ -154,5 +72,13 @@ export class AuthService {
 		]);
 
 		return 'Email verified successfully';
+	}
+
+	private hashData(data: string): Promise<string> {
+		return argon2.hash(data);
+	}
+
+	private verifyHash(hashedData: string, data: string): Promise<boolean> {
+		return argon2.verify(hashedData, data);
 	}
 }

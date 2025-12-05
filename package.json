@@ -25,11 +25,13 @@
     "@nestjs/common": "^9.0.0",
     "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^9.0.0",
+    "@nestjs/jwt": "^11.0.1",
     "@nestjs/platform-express": "^9.0.0",
     "@prisma/adapter-pg": "^7.0.1",
     "@prisma/client": "^7.0.1",
     "argon2": "^0.44.0",
     "class-validator": "^0.14.3",
+    "crypto": "^1.0.1",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0"
   },
