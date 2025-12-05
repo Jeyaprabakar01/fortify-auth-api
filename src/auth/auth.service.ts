@@ -10,10 +10,12 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { OTPType } from 'generated/prisma/enums';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtService } from '@nestjs/jwt';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { OtpService } from 'src/otp/otp.service';
 import { LoginUserDto } from './dto/login-user.dto';
-import { TokenPayload } from './types';
+import { TokenPayload } from 'src/auth/types';
+import { DeviceDetails } from 'src/auth/decorators/device-details.decorator';
+import { Response } from 'express';
 
 @Injectable()
 export class AuthService {
@@ -80,7 +82,11 @@ export class AuthService {
 		return 'Email verified successfully';
 	}
 
-	async loginUser(loginUserDto: LoginUserDto): Promise<string> {
+	async loginUser(
+		loginUserDto: LoginUserDto,
+		deviceDetails: DeviceDetails,
+		res: Response,
+	): Promise<void> {
 		const user = await this.prismaService.user.findUnique({
 			where: {
 				email: loginUserDto.email,
@@ -106,10 +112,34 @@ export class AuthService {
 			throw new UnauthorizedException('Your email or password incorrect');
 		}
 
-		return await this.createSession(user.id);
+		const { accessToken, refreshToken } = await this.createSession(
+			user.id,
+			deviceDetails,
+		);
+
+		res.cookie('access_token', accessToken, {
+			httpOnly: true,
+			maxAge: 15 * 60 * 1000,
+			secure: true,
+			sameSite: 'strict',
+			path: '/',
+		});
+
+		res.cookie('refresh_token', refreshToken, {
+			httpOnly: true,
+			maxAge: 7 * 24 * 60 * 60 * 1000,
+			secure: true,
+			sameSite: 'strict',
+			path: '/auth/refresh',
+		});
+
+		res.send('Logged in successfully');
 	}
 
-	private async createSession(userId: string): Promise<string> {
+	private async createSession(
+		userId: string,
+		deviceDetails: DeviceDetails,
+	): Promise<{ accessToken: string; refreshToken: string }> {
 		const user = await this.prismaService.user.findUnique({
 			where: {
 				id: userId,
@@ -125,9 +155,7 @@ export class AuthService {
 		const accessToken = await this.jwtService.signAsync(tokenPayload);
 
 		const refreshToken = await randomBytes(64).toString('hex');
-		const hashedRefreshToken = createHash('sha256')
-			.update(refreshToken)
-			.digest('hex');
+		const hashedRefreshToken = await this.hashData(refreshToken);
 
 		const now = new Date();
 		const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -136,15 +164,15 @@ export class AuthService {
 			data: {
 				userId: user.id,
 				refreshToken: hashedRefreshToken,
-				deviceInfo: '',
-				ipAddress: '',
-				userAgent: '',
+				deviceInfo: deviceDetails.deviceInfo,
+				ipAddress: deviceDetails.ipAddress,
+				userAgent: deviceDetails.userAgent,
 				lastUsedAt: now,
 				expiresAt: expiresAt,
 			},
 		});
 
-		return accessToken;
+		return { accessToken, refreshToken };
 	}
 
 	private hashData(data: string): Promise<string> {
