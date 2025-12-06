@@ -15,7 +15,7 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { TokenPayload } from 'src/auth/types';
 import { DeviceDetails } from 'src/auth/decorators/device-details.decorator';
 import { Response } from 'express';
-import { OTPType } from 'src/generated/prisma/enums';
+import { LoginStatus, OTPType } from 'src/generated/prisma/enums';
 
 @Injectable()
 export class AuthService {
@@ -103,12 +103,30 @@ export class AuthService {
 			);
 		}
 
+		if (user.lockUntil) {
+		}
+
 		const isPasswordMatched = await this.verifyHash(
 			user.password,
 			loginUserDto.password,
 		);
 
 		if (!isPasswordMatched) {
+			await this.createLoginActivity(
+				user.id,
+				deviceDetails,
+				LoginStatus.FAILURE,
+			);
+
+			await this.prismaService.user.update({
+				where: {
+					id: user.id,
+				},
+				data: {
+					failedAttempts: user.failedAttempts + 1,
+				},
+			});
+
 			throw new UnauthorizedException('Your email or password incorrect');
 		}
 
@@ -116,6 +134,18 @@ export class AuthService {
 			user.id,
 			deviceDetails,
 		);
+
+		await this.createLoginActivity(user.id, deviceDetails, LoginStatus.SUCCESS);
+
+		await this.prismaService.user.update({
+			where: {
+				id: user.id,
+			},
+			data: {
+				failedAttempts: 0,
+				lockUntil: null,
+			},
+		});
 
 		res.cookie('access_token', accessToken, {
 			httpOnly: true,
@@ -173,6 +203,22 @@ export class AuthService {
 		});
 
 		return { accessToken, refreshToken };
+	}
+
+	private async createLoginActivity(
+		userId: string,
+		deviceDetails: DeviceDetails,
+		status: LoginStatus,
+	) {
+		await this.prismaService.loginActivity.create({
+			data: {
+				userId,
+				ipAddress: deviceDetails.ipAddress,
+				userAgent: deviceDetails.userAgent,
+				deviceInfo: deviceDetails.deviceInfo,
+				status: status,
+			},
+		});
 	}
 
 	private hashData(data: string): Promise<string> {
