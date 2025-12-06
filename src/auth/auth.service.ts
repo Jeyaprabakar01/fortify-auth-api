@@ -103,9 +103,6 @@ export class AuthService {
 			);
 		}
 
-		if (user.lockUntil) {
-		}
-
 		const isPasswordMatched = await this.verifyHash(
 			user.password,
 			loginUserDto.password,
