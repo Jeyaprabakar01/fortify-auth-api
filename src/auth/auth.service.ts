@@ -103,28 +103,76 @@ export class AuthService {
 			);
 		}
 
+		let currentFailedAttempts = user.failedAttempts;
+
+		if (user.lockUntil) {
+			const now = new Date();
+
+			if (user.lockUntil > now) {
+				const remainingMinutes = Math.ceil(
+					(user.lockUntil.getTime() - now.getTime()) / (1000 * 60),
+				);
+
+				throw new UnauthorizedException(
+					`Account is temporarily locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute(s).`,
+				);
+			} else {
+				currentFailedAttempts = 0;
+
+				await this.prismaService.user.update({
+					where: { id: user.id },
+					data: {
+						failedAttempts: 0,
+						lockUntil: null,
+					},
+				});
+			}
+		}
+
 		const isPasswordMatched = await this.verifyHash(
 			user.password,
 			loginUserDto.password,
 		);
 
 		if (!isPasswordMatched) {
+			const newFailedAttempts = currentFailedAttempts + 1;
+			const MAX_ATTEMPTS = 5;
+			const LOCK_DURATION_MINUTES = 15;
+
 			await this.createLoginActivity(
 				user.id,
 				deviceDetails,
 				LoginStatus.FAILURE,
 			);
 
-			await this.prismaService.user.update({
-				where: {
-					id: user.id,
-				},
-				data: {
-					failedAttempts: user.failedAttempts + 1,
-				},
-			});
+			if (newFailedAttempts >= MAX_ATTEMPTS) {
+				const lockUntil = new Date();
+				lockUntil.setMinutes(lockUntil.getMinutes() + LOCK_DURATION_MINUTES);
 
-			throw new UnauthorizedException('Your email or password incorrect');
+				await this.prismaService.user.update({
+					where: { id: user.id },
+					data: {
+						failedAttempts: newFailedAttempts,
+						lockUntil: lockUntil,
+					},
+				});
+
+				throw new UnauthorizedException(
+					`Account is temporarily locked due to multiple failed login attempts. Please try again after ${LOCK_DURATION_MINUTES} minute(s).`,
+				);
+			} else {
+				await this.prismaService.user.update({
+					where: { id: user.id },
+					data: {
+						failedAttempts: newFailedAttempts,
+					},
+				});
+
+				const remainingAttempts = MAX_ATTEMPTS - newFailedAttempts;
+				throw new UnauthorizedException(
+					`Your email or password incorrect. ${remainingAttempts} attempt(s) remaining before account lock.`,
+				);
+			}
 		}
 
 		const { accessToken, refreshToken } = await this.createSession(
