@@ -15,7 +15,7 @@ import { TokenPayload } from 'src/auth/types';
 import { DeviceDetails } from 'src/auth/decorators/device-details.decorator';
 import { Response } from 'express';
 import { LoginStatus, OTPType } from 'src/generated/prisma/enums';
-import { authConfig } from './config';
+import { authConfig } from './config/auth.config';
 import { User } from 'src/generated/prisma/client';
 
 @Injectable()
@@ -83,6 +83,16 @@ export class AuthService {
 		}
 
 		await this.handleSuccessfulLogin(user.id, deviceDetails, res);
+	}
+
+	async logout(sessionId: string, res: Response): Promise<void> {
+		await this.prismaService.session.delete({
+			where: { id: sessionId },
+		});
+
+		this.clearAuthCookies(res);
+
+		res.send('Logged out successfully');
 	}
 
 	async refreshAccessToken(refreshToken: string, res: Response): Promise<void> {
@@ -253,23 +263,13 @@ export class AuthService {
 			where: { id: userId },
 		});
 
-		const tokenPayload: TokenPayload = {
-			id: user.id,
-			email: user.email,
-			role: user.role,
-		};
-
-		const accessToken = await this.jwtService.signAsync(tokenPayload, {
-			expiresIn: authConfig.accessToken.expiresIn,
-		});
-
 		const refreshToken = this.generateRefreshToken();
 		const hashedRefreshToken = this.hashRefreshToken(refreshToken);
 
 		const now = new Date();
 		const expiresAt = new Date(now.getTime() + authConfig.session.expiresIn);
 
-		await prisma.session.create({
+		const session = await prisma.session.create({
 			data: {
 				userId: user.id,
 				refreshToken: hashedRefreshToken,
@@ -280,6 +280,15 @@ export class AuthService {
 				expiresAt: expiresAt,
 			},
 		});
+
+		const tokenPayload: TokenPayload = {
+			id: user.id,
+			email: user.email,
+			role: user.role,
+			sessionId: session.id,
+		};
+
+		const accessToken = await this.jwtService.signAsync(tokenPayload);
 
 		return { accessToken, refreshToken };
 	}
@@ -347,26 +356,25 @@ export class AuthService {
 			where: { id: userId },
 		});
 
-		const tokenPayload: TokenPayload = {
-			id: user.id,
-			email: user.email,
-			role: user.role,
-		};
-
-		const accessToken = await this.jwtService.signAsync(tokenPayload, {
-			expiresIn: authConfig.accessToken.expiresIn,
-		});
-
 		const newRefreshToken = this.generateRefreshToken();
 		const hashedNewToken = this.hashRefreshToken(newRefreshToken);
 
-		await this.prismaService.session.update({
+		const session = await this.prismaService.session.update({
 			where: { id: sessionId },
 			data: {
 				refreshToken: hashedNewToken,
 				lastUsedAt: new Date(),
 			},
 		});
+
+		const tokenPayload: TokenPayload = {
+			id: user.id,
+			email: user.email,
+			role: user.role,
+			sessionId: session.id,
+		};
+
+		const accessToken = await this.jwtService.signAsync(tokenPayload);
 
 		return { accessToken, refreshToken: newRefreshToken };
 	}

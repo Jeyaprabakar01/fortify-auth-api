@@ -5,6 +5,8 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { OtpModule } from 'src/otp/otp.module';
+import { PassportModule } from '@nestjs/passport';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
 	imports: [
@@ -19,9 +21,10 @@ import { OtpModule } from 'src/otp/otp.module';
 			}),
 			inject: [ConfigService],
 		}),
+		PassportModule.register({ defaultStrategy: 'jwt' }),
 		OtpModule,
 	],
-	providers: [AuthService],
+	providers: [AuthService, JwtStrategy],
 	controllers: [AuthController],
 })
 export class AuthModule {}

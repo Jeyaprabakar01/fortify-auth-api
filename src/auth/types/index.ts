@@ -4,4 +4,5 @@ export type TokenPayload = {
 	id: string;
 	email: string;
 	role: Role;
+	sessionId: string;
 };

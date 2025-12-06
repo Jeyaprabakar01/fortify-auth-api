@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -8,6 +8,9 @@ import {
 	DeviceDetails,
 } from 'src/auth/decorators/device-details.decorator';
 import { Request, Response } from 'express';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { GetUser } from './decorators/get-user.decorator';
+import { TokenPayload } from './types';
 
 @Controller('auth')
 export class AuthController {
@@ -27,15 +30,21 @@ export class AuthController {
 	loginUser(
 		@Body() loginUserDto: LoginUserDto,
 		@Device() deviceDetails: DeviceDetails,
-		@Res() response: Response,
+		@Res() res: Response,
 	): Promise<void> {
-		return this.authService.loginUser(loginUserDto, deviceDetails, response);
+		return this.authService.loginUser(loginUserDto, deviceDetails, res);
 	}
 
 	@Post('refresh')
-	refreshToken(@Req() req: Request, @Res() response: Response): Promise<void> {
+	refreshToken(@Req() req: Request, @Res() res: Response): Promise<void> {
 		const refreshToken = req.cookies['refresh_token'];
 
-		return this.authService.refreshAccessToken(refreshToken, response);
+		return this.authService.refreshAccessToken(refreshToken, res);
+	}
+
+	@Post('logout')
+	@UseGuards(JwtAuthGuard)
+	async logout(@GetUser() tokenPayload: TokenPayload, @Res() res: Response) {
+		await this.authService.logout(tokenPayload.sessionId, res);
 	}
 }
