@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -7,7 +7,7 @@ import {
 	Device,
 	DeviceDetails,
 } from 'src/auth/decorators/device-details.decorator';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -30,5 +30,12 @@ export class AuthController {
 		@Res() response: Response,
 	): Promise<void> {
 		return this.authService.loginUser(loginUserDto, deviceDetails, response);
+	}
+
+	@Post('refresh')
+	refreshToken(@Req() req: Request, @Res() response: Response): Promise<void> {
+		const refreshToken = req.cookies['refresh_token'];
+
+		return this.authService.refreshAccessToken(refreshToken, response);
 	}
 }

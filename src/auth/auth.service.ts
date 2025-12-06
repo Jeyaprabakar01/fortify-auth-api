@@ -1,21 +1,22 @@
 import {
 	BadRequestException,
 	Injectable,
-	NotFoundException,
 	UnauthorizedException,
 } from '@nestjs/common';
 import { RegisterUserDto } from './dto/register-user.dto';
-import * as argon2 from 'argon2';
+import argon2 from 'argon2';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtService } from '@nestjs/jwt';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { OtpService } from 'src/otp/otp.service';
 import { LoginUserDto } from './dto/login-user.dto';
 import { TokenPayload } from 'src/auth/types';
 import { DeviceDetails } from 'src/auth/decorators/device-details.decorator';
 import { Response } from 'express';
 import { LoginStatus, OTPType } from 'src/generated/prisma/enums';
+import { authConfig } from './config';
+import { User } from 'src/generated/prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -26,15 +27,9 @@ export class AuthService {
 	) {}
 
 	async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
-		const existingUser = await this.prismaService.user.findUnique({
-			where: { email: registerUserDto.email },
-		});
+		await this.validateUserDoesNotExist(registerUserDto.email);
 
-		if (existingUser) {
-			throw new BadRequestException('User with this email already exists');
-		}
-
-		const hashedPassword = await this.hashData(registerUserDto.password);
+		const hashedPassword = await this.hashPassword(registerUserDto.password);
 
 		const user = await this.prismaService.user.create({
 			data: {
@@ -50,17 +45,9 @@ export class AuthService {
 	}
 
 	async verifyEmail(verifyEmailDto: VerifyEmailDto): Promise<string> {
-		const user = await this.prismaService.user.findUnique({
-			where: { email: verifyEmailDto.email },
-		});
+		const user = await this.findUserByEmail(verifyEmailDto.email);
 
-		if (!user) {
-			throw new NotFoundException('User not found');
-		}
-
-		if (user.isVerified) {
-			throw new BadRequestException('Email already verified');
-		}
+		this.ensureEmailNotAlreadyVerified(user);
 
 		const validOtp = await this.otpService.findValidOtp(
 			user.id,
@@ -68,16 +55,7 @@ export class AuthService {
 			verifyEmailDto.otpCode,
 		);
 
-		await this.prismaService.$transaction([
-			this.prismaService.oTP.update({
-				where: { id: validOtp.id },
-				data: { isUsed: true },
-			}),
-			this.prismaService.user.update({
-				where: { id: user.id },
-				data: { isVerified: true },
-			}),
-		]);
+		await this.markEmailAsVerified(user.id, validOtp.id);
 
 		return 'Email verified successfully';
 	}
@@ -87,125 +65,178 @@ export class AuthService {
 		deviceDetails: DeviceDetails,
 		res: Response,
 	): Promise<void> {
-		const user = await this.prismaService.user.findUnique({
-			where: {
-				email: loginUserDto.email,
-			},
-		});
+		const user = await this.findUserByEmail(loginUserDto.email);
 
-		if (!user) {
-			throw new UnauthorizedException('Your email or password incorrect');
+		this.ensureUserExists(user);
+		this.ensureEmailIsVerified(user);
+
+		await this.checkAccountLockStatus(user);
+
+		const isPasswordValid = await this.verifyPassword(
+			user.password,
+			loginUserDto.password,
+		);
+
+		if (!isPasswordValid) {
+			await this.handleFailedLogin(user.id, deviceDetails);
+			return;
 		}
 
+		await this.handleSuccessfulLogin(user.id, deviceDetails, res);
+	}
+
+	async refreshAccessToken(refreshToken: string, res: Response): Promise<void> {
+		const session = await this.findValidSession(refreshToken);
+
+		const newTokens = await this.rotateSessionTokens(
+			session.id,
+			session.userId,
+		);
+
+		this.setAuthCookies(res, newTokens.accessToken, newTokens.refreshToken);
+
+		res.send('Token refreshed successfully');
+	}
+
+	private async validateUserDoesNotExist(email: string): Promise<void> {
+		const existingUser = await this.prismaService.user.findUnique({
+			where: { email },
+		});
+
+		if (existingUser) {
+			throw new BadRequestException('User with this email already exists');
+		}
+	}
+
+	private ensureUserExists(user: User): void {
+		if (!user) {
+			throw new UnauthorizedException('Invalid credentials');
+		}
+	}
+
+	private ensureEmailIsVerified(user: User): void {
 		if (!user.isVerified) {
 			throw new UnauthorizedException(
 				'Email not verified. Please verify your email',
 			);
 		}
+	}
 
-		let currentFailedAttempts = user.failedAttempts;
+	private ensureEmailNotAlreadyVerified(user: User): void {
+		if (user.isVerified) {
+			throw new BadRequestException('Email already verified');
+		}
+	}
 
-		if (user.lockUntil) {
-			const now = new Date();
+	private async findUserByEmail(email: string) {
+		return this.prismaService.user.findUnique({
+			where: { email },
+		});
+	}
 
-			if (user.lockUntil > now) {
-				const remainingMinutes = Math.ceil(
-					(user.lockUntil.getTime() - now.getTime()) / (1000 * 60),
-				);
-
-				throw new UnauthorizedException(
-					`Account is temporarily locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute(s).`,
-				);
-			} else {
-				currentFailedAttempts = 0;
-
-				await this.prismaService.user.update({
-					where: { id: user.id },
-					data: {
-						failedAttempts: 0,
-						lockUntil: null,
-					},
-				});
-			}
+	private async checkAccountLockStatus(user: User): Promise<void> {
+		if (!user.lockUntil) {
+			return;
 		}
 
-		const isPasswordMatched = await this.verifyHash(
-			user.password,
-			loginUserDto.password,
-		);
+		const now = new Date();
 
-		if (!isPasswordMatched) {
-			const newFailedAttempts = currentFailedAttempts + 1;
-			const MAX_ATTEMPTS = 5;
-			const LOCK_DURATION_MINUTES = 15;
-
-			await this.createLoginActivity(
-				user.id,
-				deviceDetails,
-				LoginStatus.FAILURE,
+		if (user.lockUntil > now) {
+			const remainingMinutes = Math.ceil(
+				(user.lockUntil.getTime() - now.getTime()) / (1000 * 60),
 			);
 
-			if (newFailedAttempts >= MAX_ATTEMPTS) {
-				const lockUntil = new Date();
-				lockUntil.setMinutes(lockUntil.getMinutes() + LOCK_DURATION_MINUTES);
-
-				await this.prismaService.user.update({
-					where: { id: user.id },
-					data: {
-						failedAttempts: newFailedAttempts,
-						lockUntil: lockUntil,
-					},
-				});
-
-				throw new UnauthorizedException(
-					`Account is temporarily locked due to multiple failed login attempts. Please try again after ${LOCK_DURATION_MINUTES} minute(s).`,
-				);
-			} else {
-				await this.prismaService.user.update({
-					where: { id: user.id },
-					data: {
-						failedAttempts: newFailedAttempts,
-					},
-				});
-
-				const remainingAttempts = MAX_ATTEMPTS - newFailedAttempts;
-				throw new UnauthorizedException(
-					`Your email or password incorrect. ${remainingAttempts} attempt(s) remaining before account lock.`,
-				);
-			}
+			throw new UnauthorizedException(
+				`Account temporarily locked. Try again in ${remainingMinutes} minute(s).`,
+			);
 		}
 
-		const { accessToken, refreshToken } = await this.createSession(
-			user.id,
-			deviceDetails,
-		);
+		await this.resetFailedAttempts(user.id);
+	}
 
-		await this.createLoginActivity(user.id, deviceDetails, LoginStatus.SUCCESS);
-
+	private async resetFailedAttempts(userId: string): Promise<void> {
 		await this.prismaService.user.update({
-			where: {
-				id: user.id,
-			},
+			where: { id: userId },
 			data: {
 				failedAttempts: 0,
 				lockUntil: null,
 			},
 		});
+	}
 
-		res.cookie('access_token', accessToken, {
-			httpOnly: true,
-			maxAge: 15 * 60 * 1000,
-			secure: true,
-			sameSite: 'strict',
-			path: '/',
+	private async handleFailedLogin(
+		userId: string,
+		deviceDetails: DeviceDetails,
+	): Promise<never> {
+		const updatedUser = await this.prismaService.user.update({
+			where: { id: userId },
+			data: {
+				failedAttempts: { increment: 1 },
+			},
+			select: { failedAttempts: true },
 		});
 
-		res.cookie('refresh_token', refreshToken, {
-			httpOnly: true,
-			maxAge: 7 * 24 * 60 * 60 * 1000,
-			secure: true,
-			sameSite: 'strict',
-			path: '/auth/refresh',
+		await this.createLoginActivity(userId, deviceDetails, LoginStatus.FAILURE);
+
+		const newFailedAttempts = updatedUser.failedAttempts;
+
+		if (newFailedAttempts >= authConfig.accountLock.maxAttempts) {
+			await this.lockAccount(userId);
+			throw new UnauthorizedException(
+				`Account locked due to multiple failed attempts. Try again after ${authConfig.accountLock.lockDurationMinutes} minutes.`,
+			);
+		}
+
+		const remainingAttempts =
+			authConfig.accountLock.maxAttempts - newFailedAttempts;
+
+		throw new UnauthorizedException(
+			`Invalid credentials. ${remainingAttempts} attempt(s) remaining.`,
+		);
+	}
+
+	private async lockAccount(userId: string): Promise<void> {
+		const lockUntil = new Date();
+		lockUntil.setMinutes(
+			lockUntil.getMinutes() + authConfig.accountLock.lockDurationMinutes,
+		);
+
+		await this.prismaService.user.update({
+			where: { id: userId },
+			data: { lockUntil },
+		});
+	}
+
+	private async handleSuccessfulLogin(
+		userId: string,
+		deviceDetails: DeviceDetails,
+		res: Response,
+	): Promise<void> {
+		await this.prismaService.$transaction(async (tx) => {
+			await this.enforceSessionLimit(userId, tx);
+
+			const { accessToken, refreshToken } = await this.createSession(
+				userId,
+				deviceDetails,
+				tx,
+			);
+
+			await this.createLoginActivity(
+				userId,
+				deviceDetails,
+				LoginStatus.SUCCESS,
+				tx,
+			);
+
+			await tx.user.update({
+				where: { id: userId },
+				data: {
+					failedAttempts: 0,
+					lockUntil: null,
+				},
+			});
+
+			this.setAuthCookies(res, accessToken, refreshToken);
 		});
 
 		res.send('Logged in successfully');
@@ -214,11 +245,12 @@ export class AuthService {
 	private async createSession(
 		userId: string,
 		deviceDetails: DeviceDetails,
+		tx?: any,
 	): Promise<{ accessToken: string; refreshToken: string }> {
-		const user = await this.prismaService.user.findUnique({
-			where: {
-				id: userId,
-			},
+		const prisma = tx || this.prismaService;
+
+		const user = await prisma.user.findUnique({
+			where: { id: userId },
 		});
 
 		const tokenPayload: TokenPayload = {
@@ -227,15 +259,17 @@ export class AuthService {
 			role: user.role,
 		};
 
-		const accessToken = await this.jwtService.signAsync(tokenPayload);
+		const accessToken = await this.jwtService.signAsync(tokenPayload, {
+			expiresIn: authConfig.accessToken.expiresIn,
+		});
 
-		const refreshToken = await randomBytes(64).toString('hex');
-		const hashedRefreshToken = await this.hashData(refreshToken);
+		const refreshToken = this.generateRefreshToken();
+		const hashedRefreshToken = this.hashRefreshToken(refreshToken);
 
 		const now = new Date();
-		const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+		const expiresAt = new Date(now.getTime() + authConfig.session.expiresIn);
 
-		await this.prismaService.session.create({
+		await prisma.session.create({
 			data: {
 				userId: user.id,
 				refreshToken: hashedRefreshToken,
@@ -250,12 +284,102 @@ export class AuthService {
 		return { accessToken, refreshToken };
 	}
 
+	private async enforceSessionLimit(userId: string, tx?: any): Promise<void> {
+		const prisma = tx || this.prismaService;
+
+		const sessions = await prisma.session.findMany({
+			where: { userId },
+			orderBy: { lastUsedAt: 'desc' },
+		});
+
+		if (sessions.length >= authConfig.session.maxSessions) {
+			const sessionsToDelete = sessions.slice(
+				authConfig.session.maxSessions - 1,
+			);
+
+			await prisma.session.deleteMany({
+				where: {
+					id: { in: sessionsToDelete.map((s) => s.id) },
+				},
+			});
+		}
+	}
+
+	private async findValidSession(refreshToken: string) {
+		const hashedToken = this.hashRefreshToken(refreshToken);
+
+		const sessions = await this.prismaService.session.findMany({
+			where: {
+				expiresAt: { gt: new Date() },
+			},
+		});
+
+		const matchingSession = sessions.find((session) => {
+			try {
+				const sessionBuffer = Buffer.from(session.refreshToken, 'hex');
+				const tokenBuffer = Buffer.from(hashedToken, 'hex');
+
+				if (sessionBuffer.length !== tokenBuffer.length) {
+					return false;
+				}
+
+				return timingSafeEqual(
+					new Uint8Array(sessionBuffer),
+					new Uint8Array(tokenBuffer),
+				);
+			} catch {
+				return false;
+			}
+		});
+
+		if (!matchingSession) {
+			throw new UnauthorizedException('Invalid or expired refresh token');
+		}
+
+		return matchingSession;
+	}
+
+	private async rotateSessionTokens(
+		sessionId: string,
+		userId: string,
+	): Promise<{ accessToken: string; refreshToken: string }> {
+		const user = await this.prismaService.user.findUnique({
+			where: { id: userId },
+		});
+
+		const tokenPayload: TokenPayload = {
+			id: user.id,
+			email: user.email,
+			role: user.role,
+		};
+
+		const accessToken = await this.jwtService.signAsync(tokenPayload, {
+			expiresIn: authConfig.accessToken.expiresIn,
+		});
+
+		const newRefreshToken = this.generateRefreshToken();
+		const hashedNewToken = this.hashRefreshToken(newRefreshToken);
+
+		await this.prismaService.session.update({
+			where: { id: sessionId },
+			data: {
+				refreshToken: hashedNewToken,
+				lastUsedAt: new Date(),
+			},
+		});
+
+		return { accessToken, refreshToken: newRefreshToken };
+	}
+
 	private async createLoginActivity(
 		userId: string,
 		deviceDetails: DeviceDetails,
 		status: LoginStatus,
-	) {
-		await this.prismaService.loginActivity.create({
+		tx?: any,
+	): Promise<void> {
+		const prisma = tx || this.prismaService;
+
+		await prisma.loginActivity.create({
 			data: {
 				userId,
 				ipAddress: deviceDetails.ipAddress,
@@ -266,11 +390,65 @@ export class AuthService {
 		});
 	}
 
-	private hashData(data: string): Promise<string> {
-		return argon2.hash(data);
+	private async markEmailAsVerified(
+		userId: string,
+		otpId: string,
+	): Promise<void> {
+		await this.prismaService.$transaction([
+			this.prismaService.oTP.update({
+				where: { id: otpId },
+				data: { isUsed: true },
+			}),
+			this.prismaService.user.update({
+				where: { id: userId },
+				data: { isVerified: true },
+			}),
+		]);
 	}
 
-	private verifyHash(hashedData: string, data: string): Promise<boolean> {
-		return argon2.verify(hashedData, data);
+	private async hashPassword(password: string): Promise<string> {
+		return argon2.hash(password);
+	}
+
+	private async verifyPassword(
+		hashedPassword: string,
+		plainPassword: string,
+	): Promise<boolean> {
+		return argon2.verify(hashedPassword, plainPassword);
+	}
+
+	private generateRefreshToken(): string {
+		return randomBytes(64).toString('hex');
+	}
+
+	private hashRefreshToken(token: string): string {
+		return createHash('sha256').update(token).digest('hex');
+	}
+
+	private setAuthCookies(
+		res: Response,
+		accessToken: string,
+		refreshToken: string,
+	): void {
+		res.cookie('access_token', accessToken, {
+			httpOnly: true,
+			maxAge: authConfig.accessToken.maxAge,
+			secure: true,
+			sameSite: 'lax',
+			path: '/',
+		});
+
+		res.cookie('refresh_token', refreshToken, {
+			httpOnly: true,
+			maxAge: authConfig.refreshToken.maxAge,
+			secure: true,
+			sameSite: 'lax',
+			path: '/auth/refresh',
+		});
+	}
+
+	private clearAuthCookies(res: Response): void {
+		res.clearCookie('access_token');
+		res.clearCookie('refresh_token');
 	}
 }
