@@ -7,8 +7,14 @@ import { ConfigModule } from '@nestjs/config';
 import { OtpModule } from './otp/otp.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, PrismaModule, OtpModule],
-  controllers: [AppController],
-  providers: [AppService],
+	imports: [
+		ConfigModule.forRoot({ isGlobal: true }),
+		AuthModule,
+		PrismaModule,
+		OtpModule,
+	],
+	controllers: [AppController],
+	providers: [AppService],
 })
 export class AppModule {}
+

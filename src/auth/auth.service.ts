@@ -11,20 +11,40 @@ import { JwtService } from '@nestjs/jwt';
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { OtpService } from 'src/otp/otp.service';
 import { LoginUserDto } from './dto/login-user.dto';
-import { TokenPayload } from 'src/auth/types';
+import { AuthConfig, TokenPayload } from 'src/auth/types';
 import { DeviceDetails } from 'src/auth/decorators/device-details.decorator';
 import { Response } from 'express';
 import { LoginStatus, OTPType } from 'src/generated/prisma/enums';
-import { authConfig } from './config/auth.config';
 import { User } from 'src/generated/prisma/client';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
+	private readonly authConfig: AuthConfig;
+
 	constructor(
 		private readonly prismaService: PrismaService,
 		private readonly jwtService: JwtService,
 		private readonly otpService: OtpService,
-	) {}
+		private readonly configService: ConfigService,
+	) {
+		this.authConfig = {
+			accessToken: {
+				maxAge: this.configService.getOrThrow('ACCESS_TOKEN_MAXAGE'),
+			},
+			refreshToken: {
+				maxAge: this.configService.getOrThrow('REFRESH_TOKEN_MAXAGE'),
+			},
+			session: {
+				expiry: this.configService.getOrThrow('SESSION_EXPIRY'),
+				maxConcurrent: this.configService.getOrThrow('SESSION_MAX_CONCURRENT'),
+			},
+			accountLock: {
+				maxAttempts: this.configService.getOrThrow('ACCOUNT_LOCK_MAX_ATTEMPTS'),
+				lockDuration: this.configService.getOrThrow('ACCOUNT_LOCK_DURATION'),
+			},
+		};
+	}
 
 	async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
 		await this.validateUserDoesNotExist(registerUserDto.email);
@@ -190,15 +210,15 @@ export class AuthService {
 
 		const newFailedAttempts = updatedUser.failedAttempts;
 
-		if (newFailedAttempts >= authConfig.accountLock.maxAttempts) {
+		if (newFailedAttempts >= this.authConfig.accountLock.maxAttempts) {
 			await this.lockAccount(userId);
 			throw new UnauthorizedException(
-				`Account locked due to multiple failed attempts. Try again after ${authConfig.accountLock.lockDurationMinutes} minutes.`,
+				`Account locked due to multiple failed attempts. Try again after ${this.authConfig.accountLock.lockDuration} minutes.`,
 			);
 		}
 
 		const remainingAttempts =
-			authConfig.accountLock.maxAttempts - newFailedAttempts;
+			this.authConfig.accountLock.maxAttempts - newFailedAttempts;
 
 		throw new UnauthorizedException(
 			`Invalid credentials. ${remainingAttempts} attempt(s) remaining.`,
@@ -206,9 +226,9 @@ export class AuthService {
 	}
 
 	private async lockAccount(userId: string): Promise<void> {
-		const lockUntil = new Date();
-		lockUntil.setMinutes(
-			lockUntil.getMinutes() + authConfig.accountLock.lockDurationMinutes,
+		const now = new Date();
+		const lockUntil = new Date(
+			now.getTime() + this.authConfig.accountLock.lockDuration * 60 * 1000,
 		);
 
 		await this.prismaService.user.update({
@@ -267,7 +287,9 @@ export class AuthService {
 		const hashedRefreshToken = this.hashRefreshToken(refreshToken);
 
 		const now = new Date();
-		const expiresAt = new Date(now.getTime() + authConfig.session.expiresIn);
+		const expiresAt = new Date(
+			now.getTime() + this.authConfig.session.expiry * 24 * 60 * 60 * 1000,
+		);
 
 		const session = await prisma.session.create({
 			data: {
@@ -301,9 +323,9 @@ export class AuthService {
 			orderBy: { lastUsedAt: 'desc' },
 		});
 
-		if (sessions.length >= authConfig.session.maxSessions) {
+		if (sessions.length >= this.authConfig.session.maxConcurrent) {
 			const sessionsToDelete = sessions.slice(
-				authConfig.session.maxSessions - 1,
+				this.authConfig.session.maxConcurrent - 1,
 			);
 
 			await prisma.session.deleteMany({
@@ -440,17 +462,17 @@ export class AuthService {
 	): void {
 		res.cookie('access_token', accessToken, {
 			httpOnly: true,
-			maxAge: authConfig.accessToken.maxAge,
-			secure: true,
-			sameSite: 'lax',
+			maxAge: this.authConfig.accessToken.maxAge * 60 * 1000,
+			secure: process.env.NODE_ENV === 'production',
+			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
 			path: '/',
 		});
 
 		res.cookie('refresh_token', refreshToken, {
 			httpOnly: true,
-			maxAge: authConfig.refreshToken.maxAge,
-			secure: true,
-			sameSite: 'lax',
+			maxAge: this.authConfig.refreshToken.maxAge * 24 * 60 * 60 * 1000,
+			secure: process.env.NODE_ENV === 'production',
+			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
 			path: '/auth/refresh',
 		});
 	}

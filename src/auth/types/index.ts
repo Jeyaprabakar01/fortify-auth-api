@@ -6,3 +6,10 @@ export type TokenPayload = {
 	role: Role;
 	sessionId: string;
 };
+
+export type AuthConfig = {
+	accessToken: { maxAge: number };
+	refreshToken: { maxAge: number };
+	session: { expiry: number; maxConcurrent: number };
+	accountLock: { maxAttempts: number; lockDuration: number };
+};
