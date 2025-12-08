@@ -21,6 +21,7 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class AuthService {
 	private readonly authConfig: AuthConfig;
+	private readonly isProduction: boolean;
 
 	constructor(
 		private readonly prismaService: PrismaService,
@@ -44,6 +45,8 @@ export class AuthService {
 				lockDuration: this.configService.getOrThrow('ACCOUNT_LOCK_DURATION'),
 			},
 		};
+
+		this.isProduction = this.configService.get('NODE_ENV') === 'production';
 	}
 
 	async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
@@ -463,16 +466,16 @@ export class AuthService {
 		res.cookie('access_token', accessToken, {
 			httpOnly: true,
 			maxAge: this.authConfig.accessToken.maxAge * 60 * 1000,
-			secure: process.env.NODE_ENV === 'production',
-			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+			secure: this.isProduction,
+			sameSite: this.isProduction ? 'none' : 'lax',
 			path: '/',
 		});
 
 		res.cookie('refresh_token', refreshToken, {
 			httpOnly: true,
 			maxAge: this.authConfig.refreshToken.maxAge * 24 * 60 * 60 * 1000,
-			secure: process.env.NODE_ENV === 'production',
-			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+			secure: this.isProduction,
+			sameSite: this.isProduction ? 'none' : 'lax',
 			path: '/auth/refresh',
 		});
 	}
