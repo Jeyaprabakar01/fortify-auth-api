@@ -217,7 +217,7 @@ ACCOUNT_LOCK_DURATION=15   # minutes
 
 # Email Configuration (configure based on your provider)
 SMTP_HOST="smtp.example.com"
-SMTP_PORT=587
+SMTP_PORT=465
 SMTP_USER="your-email@example.com"
 SMTP_PASS="your-email-password"
 ```
@@ -347,3 +347,4 @@ This is a practice project, but feedback and suggestions are welcome! Feel free 
 - Share security concerns
 
 **Note**: This is a practice project demonstrating secure authentication patterns. While it implements industry-standard security practices, please conduct a thorough security audit before using in production environments.
+
