@@ -11,6 +11,8 @@ import { Request, Response } from 'express';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GetUser } from './decorators/get-user.decorator';
 import { TokenPayload } from './types';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdatePasswordDto } from './dto/update-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -44,7 +46,22 @@ export class AuthController {
 
 	@Post('logout')
 	@UseGuards(JwtAuthGuard)
-	async logout(@GetUser() tokenPayload: TokenPayload, @Res() res: Response) {
-		await this.authService.logout(tokenPayload.sessionId, res);
+	logout(
+		@GetUser() tokenPayload: TokenPayload,
+		@Res() res: Response,
+	): Promise<void> {
+		return this.authService.logout(tokenPayload.sessionId, res);
+	}
+
+	@Post('reset-password')
+	resetPassword(@Body() resetPasswordDto: ResetPasswordDto): Promise<string> {
+		return this.authService.resetPassword(resetPasswordDto);
+	}
+
+	@Post('update-password')
+	updatePassword(
+		@Body() updatePasswordDto: UpdatePasswordDto,
+	): Promise<string> {
+		return this.authService.updatePassword(updatePasswordDto);
 	}
 }

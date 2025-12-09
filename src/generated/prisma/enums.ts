@@ -18,8 +18,9 @@ export type Role = (typeof Role)[keyof typeof Role]
 
 
 export const OTPType = {
-  VERIFICATION: 'VERIFICATION',
-  RESET: 'RESET'
+  ACCOUNT_VERIFICATION: 'ACCOUNT_VERIFICATION',
+  EMAIL_VERIFICATION: 'EMAIL_VERIFICATION',
+  PASSWORD_RESET: 'PASSWORD_RESET'
 } as const
 
 export type OTPType = (typeof OTPType)[keyof typeof OTPType]

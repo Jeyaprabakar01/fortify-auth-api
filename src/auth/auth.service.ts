@@ -17,6 +17,8 @@ import { Response } from 'express';
 import { LoginStatus, OTPType } from 'src/generated/prisma/enums';
 import { User } from 'src/generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdatePasswordDto } from './dto/update-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -63,7 +65,10 @@ export class AuthService {
 			},
 		});
 
-		const otp = await this.otpService.createOtp(user.id, OTPType.VERIFICATION);
+		const otp = await this.otpService.createOtp(
+			user.id,
+			OTPType.ACCOUNT_VERIFICATION,
+		);
 
 		return otp;
 	}
@@ -77,11 +82,20 @@ export class AuthService {
 
 		const validOtp = await this.otpService.findValidOtp(
 			user.id,
-			OTPType.VERIFICATION,
+			OTPType.ACCOUNT_VERIFICATION,
 			verifyEmailDto.otpCode,
 		);
 
-		await this.markEmailAsVerified(user.id, validOtp.id);
+		await this.prismaService.$transaction([
+			this.prismaService.oTP.update({
+				where: { id: validOtp.id },
+				data: { isUsed: true },
+			}),
+			this.prismaService.user.update({
+				where: { id: user.id },
+				data: { isVerified: true },
+			}),
+		]);
 
 		return 'Email verified successfully';
 	}
@@ -139,6 +153,55 @@ export class AuthService {
 		this.setAuthCookies(res, newTokens.accessToken, newTokens.refreshToken);
 
 		res.send('Token refreshed successfully');
+	}
+
+	async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<string> {
+		const user = await this.findUserByEmail(resetPasswordDto.email);
+
+		if (!user) {
+			throw new BadRequestException(
+				'If an account exists with this email, we have sent you a password reset link.',
+			);
+		}
+
+		const otp = await this.otpService.createOtp(
+			user.id,
+			OTPType.PASSWORD_RESET,
+		);
+
+		return otp;
+	}
+
+	async updatePassword(updatePasswordDto: UpdatePasswordDto): Promise<string> {
+		const user = await this.findUserByEmail(updatePasswordDto.email);
+
+		if (!user) {
+			throw new BadRequestException('Invalid or expired reset link');
+		}
+
+		const validOtp = await this.otpService.findValidOtp(
+			user.id,
+			OTPType.PASSWORD_RESET,
+			updatePasswordDto.otpCode,
+		);
+
+		const hashedPassword = await this.hashPassword(updatePasswordDto.password);
+
+		await this.prismaService.$transaction([
+			this.prismaService.oTP.update({
+				where: { id: validOtp.id },
+				data: { isUsed: true },
+			}),
+			this.prismaService.user.update({
+				where: { id: user.id },
+				data: { password: hashedPassword, failedAttempts: 0, lockUntil: null },
+			}),
+			this.prismaService.session.deleteMany({
+				where: { userId: user.id },
+			}),
+		]);
+
+		return 'Password reset successfully';
 	}
 
 	private async validateUserDoesNotExist(email: string): Promise<void> {
@@ -411,22 +474,6 @@ export class AuthService {
 				status: status,
 			},
 		});
-	}
-
-	private async markEmailAsVerified(
-		userId: string,
-		otpId: string,
-	): Promise<void> {
-		await this.prismaService.$transaction([
-			this.prismaService.oTP.update({
-				where: { id: otpId },
-				data: { isUsed: true },
-			}),
-			this.prismaService.user.update({
-				where: { id: userId },
-				data: { isVerified: true },
-			}),
-		]);
 	}
 
 	private async hashPassword(password: string): Promise<string> {

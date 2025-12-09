@@ -19,8 +19,9 @@ enum Role {
 }
 
 enum OTPType {
-  VERIFICATION
-  RESET
+  ACCOUNT_VERIFICATION
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
 }
 
 enum LoginStatus {
