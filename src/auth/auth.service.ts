@@ -46,7 +46,8 @@ export class AuthService {
 			},
 		};
 
-		this.isProduction = this.configService.get('NODE_ENV') === 'production';
+		this.isProduction =
+			this.configService.getOrThrow('NODE_ENV') === 'production';
 	}
 
 	async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
@@ -70,7 +71,9 @@ export class AuthService {
 	async verifyEmail(verifyEmailDto: VerifyEmailDto): Promise<string> {
 		const user = await this.findUserByEmail(verifyEmailDto.email);
 
-		this.ensureEmailNotAlreadyVerified(user);
+		if (user.isVerified) {
+			throw new BadRequestException('Email already verified');
+		}
 
 		const validOtp = await this.otpService.findValidOtp(
 			user.id,
@@ -90,8 +93,15 @@ export class AuthService {
 	): Promise<void> {
 		const user = await this.findUserByEmail(loginUserDto.email);
 
-		this.ensureUserExists(user);
-		this.ensureEmailIsVerified(user);
+		if (!user) {
+			throw new UnauthorizedException('Invalid credentials');
+		}
+
+		if (!user.isVerified) {
+			throw new UnauthorizedException(
+				'Email not verified. Please verify your email',
+			);
+		}
 
 		await this.checkAccountLockStatus(user);
 
@@ -138,26 +148,6 @@ export class AuthService {
 
 		if (existingUser) {
 			throw new BadRequestException('User with this email already exists');
-		}
-	}
-
-	private ensureUserExists(user: User): void {
-		if (!user) {
-			throw new UnauthorizedException('Invalid credentials');
-		}
-	}
-
-	private ensureEmailIsVerified(user: User): void {
-		if (!user.isVerified) {
-			throw new UnauthorizedException(
-				'Email not verified. Please verify your email',
-			);
-		}
-	}
-
-	private ensureEmailNotAlreadyVerified(user: User): void {
-		if (user.isVerified) {
-			throw new BadRequestException('Email already verified');
 		}
 	}
 
