@@ -7,6 +7,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { OtpModule } from 'src/otp/otp.module';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { EmailModule } from 'src/email/email.module';
 
 @Module({
 	imports: [
@@ -23,6 +24,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 		}),
 		PassportModule.register({ defaultStrategy: 'jwt' }),
 		OtpModule,
+		EmailModule,
 	],
 	providers: [AuthService, JwtStrategy],
 	controllers: [AuthController],

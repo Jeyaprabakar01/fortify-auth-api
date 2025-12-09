@@ -19,17 +19,20 @@ import { Session, User } from 'src/generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
+import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class AuthService {
 	private readonly authConfig: AuthConfig;
 	private readonly isProduction: boolean;
+	private readonly webAppUrl: string;
 
 	constructor(
 		private readonly prismaService: PrismaService,
 		private readonly jwtService: JwtService,
 		private readonly otpService: OtpService,
 		private readonly configService: ConfigService,
+		private readonly emailService: EmailService,
 	) {
 		this.authConfig = {
 			accessToken: {
@@ -50,6 +53,8 @@ export class AuthService {
 
 		this.isProduction =
 			this.configService.getOrThrow('NODE_ENV') === 'production';
+
+		this.webAppUrl = this.configService.getOrThrow('WEB_APP_URL');
 	}
 
 	async registerUser(registerUserDto: RegisterUserDto): Promise<string> {
@@ -67,10 +72,27 @@ export class AuthService {
 
 		const otp = await this.otpService.createOtp(
 			user.id,
-			OTPType.ACCOUNT_VERIFICATION,
+			OTPType.EMAIL_VERIFICATION,
 		);
 
-		return otp;
+		const verificationUrl = `${
+			this.webAppUrl
+		}/verify-email?email=${encodeURIComponent(
+			user.email,
+		)}&otp=${encodeURIComponent(otp)}`;
+
+		await this.emailService.sendEmail({
+			to: user.email,
+			subject: 'Verify Your Email Address',
+			html: `
+            <p>Hi ${user.fullName},</p>
+            <p>Thank you for registering. Please verify your email address by clicking the link below:</p>
+            <p><a href="${verificationUrl}">Verify Email</a></p>
+            <p>This link will expire in 5 minutes.</p>
+            `,
+		});
+
+		return 'Registration successful. Please check your email to verify your account.';
 	}
 
 	async verifyEmail(verifyEmailDto: VerifyEmailDto): Promise<string> {
@@ -82,7 +104,7 @@ export class AuthService {
 
 		const validOtp = await this.otpService.findValidOtp(
 			user.id,
-			OTPType.ACCOUNT_VERIFICATION,
+			OTPType.EMAIL_VERIFICATION,
 			verifyEmailDto.otpCode,
 		);
 
@@ -97,7 +119,20 @@ export class AuthService {
 			}),
 		]);
 
-		return 'Email verified successfully';
+		const loginUrl = `${this.webAppUrl}/login`;
+
+		await this.emailService.sendEmail({
+			to: user.email,
+			subject: 'Email Verified Successfully',
+			html: `
+           <p>Hi ${user.fullName},</p>
+           <p>Your email has been successfully verified!</p>
+           <p>Your account is now active.</p>
+           <p><a href="${loginUrl}">Login to Your Account</a></p>
+            `,
+		});
+
+		return 'Email verified successfully. You can now log in to your account.';
 	}
 
 	async loginUser(
@@ -169,7 +204,25 @@ export class AuthService {
 			OTPType.PASSWORD_RESET,
 		);
 
-		return otp;
+		const resetPasswordUrl = `${
+			this.webAppUrl
+		}/reset-password?email=${encodeURIComponent(
+			user.email,
+		)}&otp=${encodeURIComponent(otp)}`;
+
+		await this.emailService.sendEmail({
+			to: user.email,
+			subject: 'Reset Your Password',
+			html: `
+            <p>Hi ${user.fullName},</p>
+            <p>We received a request to reset your password.</p>
+            <p>Click the link below to reset your password:</p>
+            <p><a href="${resetPasswordUrl}">Reset Password</a></p>
+            <p>This link will expire in 5 minutes.</p>
+            `,
+		});
+
+		return 'Password reset code has been sent to your email.';
 	}
 
 	async updatePassword(updatePasswordDto: UpdatePasswordDto): Promise<string> {
@@ -201,7 +254,20 @@ export class AuthService {
 			}),
 		]);
 
-		return 'Password reset successfully';
+		const loginUrl = `${this.webAppUrl}/login`;
+
+		await this.emailService.sendEmail({
+			to: user.email,
+			subject: 'Your Password Has Been Reset',
+			html: `
+            <p>Hi ${user.fullName},</p>
+            <p>Your password has been successfully reset.</p>
+            <p>You can now log in with your new password:</p>
+            <p><a href="${loginUrl}">Login to Your Account</a></p>
+            `,
+		});
+
+		return 'Password reset successful. You can now log in with your new password.';
 	}
 
 	private async validateUserDoesNotExist(email: string): Promise<void> {

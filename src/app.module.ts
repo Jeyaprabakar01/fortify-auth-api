@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ConfigModule } from '@nestjs/config';
 import { OtpModule } from './otp/otp.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
 	imports: [
@@ -12,6 +13,7 @@ import { OtpModule } from './otp/otp.module';
 		AuthModule,
 		PrismaModule,
 		OtpModule,
+		EmailModule,
 	],
 	controllers: [AppController],
 	providers: [AppService],
