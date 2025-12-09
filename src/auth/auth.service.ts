@@ -15,7 +15,7 @@ import { AuthConfig, TokenPayload } from 'src/auth/types';
 import { DeviceDetails } from 'src/auth/decorators/device-details.decorator';
 import { Response } from 'express';
 import { LoginStatus, OTPType } from 'src/generated/prisma/enums';
-import { User } from 'src/generated/prisma/client';
+import { Session, User } from 'src/generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
@@ -214,7 +214,7 @@ export class AuthService {
 		}
 	}
 
-	private async findUserByEmail(email: string) {
+	private async findUserByEmail(email: string): Promise<User | null> {
 		return this.prismaService.user.findUnique({
 			where: { email },
 		});
@@ -253,7 +253,7 @@ export class AuthService {
 	private async handleFailedLogin(
 		userId: string,
 		deviceDetails: DeviceDetails,
-	): Promise<never> {
+	): Promise<void> {
 		const updatedUser = await this.prismaService.user.update({
 			where: { id: userId },
 			data: {
@@ -392,7 +392,7 @@ export class AuthService {
 		}
 	}
 
-	private async findValidSession(refreshToken: string) {
+	private async findValidSession(refreshToken: string): Promise<Session> {
 		const hashedToken = this.hashRefreshToken(refreshToken);
 
 		const sessions = await this.prismaService.session.findMany({
