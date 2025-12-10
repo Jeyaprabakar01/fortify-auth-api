@@ -322,27 +322,3 @@ Cookie: access_token=<token>
 Authorization: Bearer <token>
 ```
 
-## Future Enhancements
-
-- [ ] Two-Factor Authentication (2FA) via email/authenticator app
-- [ ] Social OAuth integration (Google)
-- [ ] Remember device functionality
-- [ ] Suspicious activity detection and alerts
-- [ ] Email notification for new device login
-- [ ] Password history to prevent reuse
-- [ ] Account self-deletion with confirmation
-- [ ] Magic link authentication (passwordless login)
-- [ ] Backup codes for account recovery
-- [ ] Session timeout based on inactivity
-
-## Contributing
-
-This is a practice project, but feedback and suggestions are welcome! Feel free to:
-
-- Report bugs
-- Suggest new features
-- Submit pull requests
-- Share security concerns
-
-**Note**: This is a practice project demonstrating secure authentication patterns. While it implements industry-standard security practices, please conduct a thorough security audit before using in production environments.
-
