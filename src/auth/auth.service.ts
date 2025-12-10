@@ -570,7 +570,7 @@ export class AuthService {
 			httpOnly: true,
 			maxAge: this.authConfig.accessToken.maxAge * 60 * 1000,
 			secure: this.isProduction,
-			sameSite: this.isProduction ? 'none' : 'lax',
+			sameSite: 'lax',
 			path: '/',
 		});
 
@@ -578,7 +578,7 @@ export class AuthService {
 			httpOnly: true,
 			maxAge: this.authConfig.refreshToken.maxAge * 24 * 60 * 60 * 1000,
 			secure: this.isProduction,
-			sameSite: this.isProduction ? 'none' : 'lax',
+			sameSite: 'lax',
 			path: '/auth/refresh',
 		});
 	}
