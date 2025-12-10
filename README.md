@@ -1,8 +1,8 @@
 # Fortify Auth
 
-A secure end-to-end authentication module built with Nest.js, featuring advanced security practices, token rotation, multi-session management, and comprehensive user flows. This project demonstrates enterprise-level authentication patterns with a focus on security, scalability, and maintainability.
+A secure authentication system built with Nest.js, featuring email and password login, JWT tokens, refresh token rotation, multi-session management, and comprehensive security features.
 
-Designed as a learning project to explore modern authentication architecture, this system implements industry-standard security measures including Argon2 password hashing, JWT-based token management with automatic rotation, multi-device session handling, and comprehensive audit logging. The codebase emphasizes clean architecture principles, type safety with TypeScript, and defensive programming practices to handle edge cases and security threats.
+This authentication system implements modern security practices including Argon2 password hashing, JWT-based token management with automatic rotation, multi-device session handling, and comprehensive audit logging. The project demonstrates clean architecture principles, type safety with TypeScript, and defensive programming practices to handle edge cases and security threats.
 
 ### Hybrid Token-Session Authentication
 
