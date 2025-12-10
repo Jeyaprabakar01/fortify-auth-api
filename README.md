@@ -44,7 +44,8 @@ Registration → Email Verification → Login → Session Creation → Access/Re
 - Argon2 password hashing.
 - Rotating tokens with timing-safe comparisons.
 - Device fingerprints and IP logging.
-- Rate-limiting (in progress).
+- CSRF protection
+- Rate-limiting
 
 ### Modular Design
 
@@ -73,7 +74,8 @@ Registration → Email Verification → Login → Session Creation → Access/Re
 - **Secure Cookie Handling** (HttpOnly, SameSite, Secure flags)
 - **OTP System** with expiration and single-use enforcement
 - **Login Activity Tracking** for audit trails
-- **Rate Limiting** (in progress)
+- **CSRF Protection** to prevent cross-site request forgery attacks
+- **Rate Limiting** to mitigate brute-force and abuse attempts
 
 ### User Experience
 
@@ -129,6 +131,11 @@ Registration → Email Verification → Login → Session Creation → Access/Re
 - Single-use enforcement
 - Argon2 hashing for storage
 - Automatic invalidation of previous codes
+
+### Rate Limiting
+
+- Limit repeated requests to endpoints
+- Prevents brute-force attacks and abuse
 
 ## Project Structure
 
@@ -316,13 +323,6 @@ Authorization: Bearer <token>
 ```
 
 ## Future Enhancements
-
-### In Progress
-
-- [ ] Rate limiting middleware
-- [ ] API request throttling
-
-### Planned Features
 
 - [ ] Two-Factor Authentication (2FA) via email/authenticator app
 - [ ] Social OAuth integration (Google)

@@ -28,6 +28,7 @@
 		"@nestjs/jwt": "^11.0.1",
 		"@nestjs/passport": "^9.0.0",
 		"@nestjs/platform-express": "^9.0.0",
+		"@nestjs/throttler": "^6.5.0",
 		"@prisma/adapter-pg": "^7.0.1",
 		"@prisma/client": "^7.0.1",
 		"argon2": "^0.44.0",

@@ -6,6 +6,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ConfigModule } from '@nestjs/config';
 import { OtpModule } from './otp/otp.module';
 import { EmailModule } from './email/email.module';
+import { minutes, ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
 	imports: [
@@ -14,9 +16,20 @@ import { EmailModule } from './email/email.module';
 		PrismaModule,
 		OtpModule,
 		EmailModule,
+		ThrottlerModule.forRoot([
+			{
+				ttl: minutes(60),
+				limit: 10,
+			},
+		]),
 	],
 	controllers: [AppController],
-	providers: [AppService],
+	providers: [
+		AppService,
+		{
+			provide: APP_GUARD,
+			useClass: ThrottlerGuard,
+		},
+	],
 })
 export class AppModule {}
-

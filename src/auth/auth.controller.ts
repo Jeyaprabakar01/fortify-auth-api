@@ -13,21 +13,25 @@ import { GetUser } from './decorators/get-user.decorator';
 import { TokenPayload } from './types';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
+import { minutes, Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
 export class AuthController {
 	constructor(private readonly authService: AuthService) {}
 
+	@Throttle({ default: { limit: 3, ttl: minutes(60) } })
 	@Post('register')
 	registerUser(@Body() registerUserDto: RegisterUserDto): Promise<string> {
 		return this.authService.registerUser(registerUserDto);
 	}
 
+	@Throttle({ default: { limit: 10, ttl: minutes(60) } })
 	@Post('verify-email')
 	verifyEmail(@Body() verifyEmailDto: VerifyEmailDto): Promise<string> {
 		return this.authService.verifyEmail(verifyEmailDto);
 	}
 
+	@Throttle({ default: { limit: 5, ttl: minutes(60) } })
 	@Post('login')
 	loginUser(
 		@Body() loginUserDto: LoginUserDto,
@@ -37,6 +41,7 @@ export class AuthController {
 		return this.authService.loginUser(loginUserDto, deviceDetails, res);
 	}
 
+	@Throttle({ default: { limit: 5, ttl: minutes(60) } })
 	@Post('refresh')
 	refreshToken(@Req() req: Request, @Res() res: Response): Promise<void> {
 		const refreshToken = req.cookies['refresh_token'];
@@ -44,6 +49,7 @@ export class AuthController {
 		return this.authService.refreshAccessToken(refreshToken, res);
 	}
 
+	@Throttle({ default: { limit: 10, ttl: minutes(60) } })
 	@Post('logout')
 	@UseGuards(JwtAuthGuard)
 	logout(
@@ -53,11 +59,13 @@ export class AuthController {
 		return this.authService.logout(tokenPayload.sessionId, res);
 	}
 
+	@Throttle({ default: { limit: 3, ttl: minutes(60) } })
 	@Post('reset-password')
 	resetPassword(@Body() resetPasswordDto: ResetPasswordDto): Promise<string> {
 		return this.authService.resetPassword(resetPasswordDto);
 	}
 
+	@Throttle({ default: { limit: 5, ttl: minutes(60) } })
 	@Post('update-password')
 	updatePassword(
 		@Body() updatePasswordDto: UpdatePasswordDto,
