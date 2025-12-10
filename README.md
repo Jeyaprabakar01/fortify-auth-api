@@ -45,7 +45,7 @@ Registration → Email Verification → Login → Session Creation → Access/Re
 - Rotating tokens with timing-safe comparisons.
 - Device fingerprints and IP logging.
 - CSRF protection
-- Rate-limiting
+- Rate limiting
 
 ### Modular Design
 

@@ -18,8 +18,19 @@ import { APP_GUARD } from '@nestjs/core';
 		EmailModule,
 		ThrottlerModule.forRoot([
 			{
-				ttl: minutes(60),
+				name: 'short',
+				ttl: minutes(1),
 				limit: 10,
+			},
+			{
+				name: 'medium',
+				ttl: minutes(15),
+				limit: 30,
+			},
+			{
+				name: 'long',
+				ttl: minutes(60),
+				limit: 100,
 			},
 		]),
 	],
@@ -33,3 +44,4 @@ import { APP_GUARD } from '@nestjs/core';
 	],
 })
 export class AppModule {}
+
